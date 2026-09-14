@@ -15,55 +15,20 @@ class DatabaseHelper {
 
   Future<Database> initDb() async {
     String path = join(await getDatabasesPath(), 'cafe_gestor.db');
-    return await openDatabase(path, version: 2, onCreate: (db, v) async {
-      await db.execute('''
-        CREATE TABLE colaboradores(
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          nome TEXT,
-          pix TEXT,
-          valorMedida REAL,
-          qrCode TEXT
-        )
-      ''');
+    return await openDatabase(
+      path,
+      version: 2,
+      onCreate: (db, v) async {
+        await db.execute('''
+          CREATE TABLE colaboradores(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT,
+            pix TEXT,
+            valorMedida REAL,
+            qrCode TEXT
+          )
+        ''');
 
-      await db.execute('''
-        CREATE TABLE fazendas(
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          nome TEXT NOT NULL,
-          proprietario TEXT,
-          cidade TEXT,
-          areaTotal REAL
-        )
-      ''');
-
-      await db.execute('''
-        CREATE TABLE talhoes(
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          fazendaId INTEGER NOT NULL,
-          nome TEXT NOT NULL,
-          area REAL,
-          variedade TEXT,
-          anoPlantio INTEGER,
-          qtdPes INTEGER,
-          precoMedida REAL NOT NULL DEFAULT 35.0,
-          precoSaca REAL,
-          FOREIGN KEY (fazendaId) REFERENCES fazendas(id)
-        )
-      ''');
-
-      await db.execute('''
-        CREATE TABLE colheitas(
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          colaboradorId INTEGER,
-          talhaoId INTEGER,
-          data TEXT,
-          qtdMedidas REAL,
-          qtdLitros INTEGER,
-          valorTotal REAL
-        )
-      ''');
-    }, onUpgrade: (db, oldVersion, newVersion) async {
-      if (oldVersion < 2) {
         await db.execute('''
           CREATE TABLE fazendas(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -73,6 +38,7 @@ class DatabaseHelper {
             areaTotal REAL
           )
         ''');
+
         await db.execute('''
           CREATE TABLE talhoes(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -87,8 +53,57 @@ class DatabaseHelper {
             FOREIGN KEY (fazendaId) REFERENCES fazendas(id)
           )
         ''');
-      }
-    });
+
+        await db.execute('''
+          CREATE TABLE colheitas(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            colaboradorId INTEGER,
+            talhaoId INTEGER,
+            data TEXT,
+            qtdMedidas REAL,
+            qtdLitros INTEGER,
+            valorTotal REAL
+          )
+        ''');
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute('''
+            CREATE TABLE fazendas(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              nome TEXT NOT NULL,
+              proprietario TEXT,
+              cidade TEXT,
+              areaTotal REAL
+            )
+          ''');
+          await db.execute('''
+            CREATE TABLE talhoes(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              fazendaId INTEGER NOT NULL,
+              nome TEXT NOT NULL,
+              area REAL,
+              variedade TEXT,
+              anoPlantio INTEGER,
+              qtdPes INTEGER,
+              precoMedida REAL NOT NULL DEFAULT 35.0,
+              precoSaca REAL,
+              FOREIGN KEY (fazendaId) REFERENCES fazendas(id)
+            )
+          ''');
+        }
+      },
+    );
+  }
+
+  Future<int> inserirColaborador(Map<String, dynamic> c) async {
+    final database = await db;
+    return await database.insert('colaboradores', c);
+  }
+
+  Future<List<Map<String, dynamic>>> listarColaboradores() async {
+    final database = await db;
+    return await database.query('colaboradores');
   }
 
   Future<Map<String, dynamic>?> getColaboradorByQr(String qr) async {
@@ -124,23 +139,26 @@ class DatabaseHelper {
     }
   }
 
-  // NOVOS METODOS
   Future<int> inserirFazenda(Map<String, dynamic> f) async {
     final database = await db;
     return await database.insert('fazendas', f);
   }
+
   Future<List<Map<String, dynamic>>> listarFazendas() async {
     final database = await db;
     return await database.query('fazendas');
   }
+
   Future<int> inserirTalhao(Map<String, dynamic> t) async {
     final database = await db;
     return await database.insert('talhoes', t);
   }
+
   Future<List<Map<String, dynamic>>> listarTalhoesPorFazenda(int fazendaId) async {
     final database = await db;
     return await database.query('talhoes', where: 'fazendaId =?', whereArgs: [fazendaId]);
   }
+
   Future<Map<String, dynamic>?> getTalhaoById(int id) async {
     final database = await db;
     var res = await database.query('talhoes', where: 'id =?', whereArgs: [id]);
