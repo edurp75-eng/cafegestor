@@ -15,103 +15,118 @@ class DatabaseHelper {
 
   Future<Database> initDb() async {
     String path = join(await getDatabasesPath(), 'cafe_gestor.db');
-    return await openDatabase(
-      path,
-      version: 2,
-      onCreate: (db, v) async {
+    return await openDatabase(path, version: 2, onCreate: (db, v) async {
+      await _criarTabelas(db);
+    }, onUpgrade: (db, oldV, newV) async {
+      if (oldV < 2) {
+        // cria novas tabelas se já tem banco antigo instalado
         await db.execute('''
-          CREATE TABLE colaboradores(
+          CREATE TABLE IF NOT EXISTS fazendas(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nome TEXT,
-            pix TEXT,
-            valorMedida REAL,
-            qrCode TEXT
+            proprietario TEXT
           )
         ''');
-
         await db.execute('''
-          CREATE TABLE fazendas(
+          CREATE TABLE IF NOT EXISTS talhoes(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nome TEXT NOT NULL,
-            proprietario TEXT,
-            cidade TEXT,
-            areaTotal REAL
-          )
-        ''');
-
-        await db.execute('''
-          CREATE TABLE talhoes(
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            fazendaId INTEGER NOT NULL,
-            nome TEXT NOT NULL,
-            area REAL,
+            fazendaId INTEGER,
+            nome TEXT,
             variedade TEXT,
-            anoPlantio INTEGER,
-            qtdPes INTEGER,
-            precoMedida REAL NOT NULL DEFAULT 35.0,
-            precoSaca REAL,
-            FOREIGN KEY (fazendaId) REFERENCES fazendas(id)
+            precoMedida REAL DEFAULT 35.0
           )
         ''');
-
-        await db.execute('''
-          CREATE TABLE colheitas(
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            colaboradorId INTEGER,
-            talhaoId INTEGER,
-            data TEXT,
-            qtdMedidas REAL,
-            qtdLitros INTEGER,
-            valorTotal REAL
-          )
-        ''');
-      },
-      onUpgrade: (db, oldVersion, newVersion) async {
-        if (oldVersion < 2) {
-          await db.execute('''
-            CREATE TABLE fazendas(
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              nome TEXT NOT NULL,
-              proprietario TEXT,
-              cidade TEXT,
-              areaTotal REAL
-            )
-          ''');
-          await db.execute('''
-            CREATE TABLE talhoes(
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              fazendaId INTEGER NOT NULL,
-              nome TEXT NOT NULL,
-              area REAL,
-              variedade TEXT,
-              anoPlantio INTEGER,
-              qtdPes INTEGER,
-              precoMedida REAL NOT NULL DEFAULT 35.0,
-              precoSaca REAL,
-              FOREIGN KEY (fazendaId) REFERENCES fazendas(id)
-            )
-          ''');
-        }
-      },
-    );
+        // adiciona colunas novas na colheita se não existirem
+        try { await db.execute('ALTER TABLE colheitas ADD COLUMN fazendaId INTEGER'); } catch(e){}
+      }
+    });
   }
 
+  Future<void> _criarTabelas(Database db) async {
+    await db.execute('''
+      CREATE TABLE colaboradores(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nome TEXT,
+        pix TEXT,
+        valorMedida REAL,
+        qrCode TEXT
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE fazendas(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nome TEXT,
+        proprietario TEXT
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE talhoes(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        fazendaId INTEGER,
+        nome TEXT,
+        variedade TEXT,
+        precoMedida REAL DEFAULT 35.0
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE colheitas(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        colaboradorId INTEGER,
+        talhaoId INTEGER,
+        fazendaId INTEGER,
+        data TEXT,
+        qtdMedidas REAL,
+        qtdLitros INTEGER,
+        valorTotal REAL
+      )
+    ''');
+  }
+
+  // COLABORADORES
   Future<int> inserirColaborador(Map<String, dynamic> c) async {
     final database = await db;
     return await database.insert('colaboradores', c);
   }
-
   Future<List<Map<String, dynamic>>> listarColaboradores() async {
     final database = await db;
     return await database.query('colaboradores');
   }
-
   Future<Map<String, dynamic>?> getColaboradorByQr(String qr) async {
     final database = await db;
     var res = await database.query('colaboradores', where: 'qrCode =?', whereArgs: [qr]);
     return res.isNotEmpty? res.first : null;
   }
 
+  // FAZENDAS
+  Future<int> inserirFazenda(Map<String, dynamic> f) async {
+    final database = await db;
+    return await database.insert('fazendas', f);
+  }
+  Future<List<Map<String, dynamic>>> listarFazendas() async {
+    final database = await db;
+    return await database.query('fazendas', orderBy: 'nome');
+  }
+
+  // TALHÕES
+  Future<int> inserirTalhao(Map<String, dynamic> t) async {
+    final database = await db;
+    return await database.insert('talhoes', t);
+  }
+  Future<List<Map<String, dynamic>>> listarTalhoesPorFazenda(int fazendaId) async {
+    final database = await db;
+    return await database.query('talhoes', where: 'fazendaId =?', whereArgs: [fazendaId]);
+  }
+  Future<List<Map<String, dynamic>>> listarTodosTalhoes() async {
+    final database = await db;
+    var res = await database.rawQuery('''
+      SELECT t.*, f.nome as fazendaNome FROM talhoes t
+      LEFT JOIN fazendas f ON t.fazendaId = f.id
+      ORDER BY f.nome, t.nome
+    ''');
+    return res;
+  }
+
+  // COLHEITAS
   Future<int> inserirColheita(Map<String, dynamic> c) async {
     final database = await db;
     return await database.insert('colheitas', c);
@@ -134,34 +149,7 @@ class DatabaseHelper {
     if (await file.exists()) {
       final tempDir = await getTemporaryDirectory();
       final backupFile = await file.copy('${tempDir.path}/backup_vargem_${DateTime.now().day}.db');
-      await Share.shareXFiles([XFile(backupFile.path)],
-          text: 'Backup CafeGestor 60L - R\$35/medida - Vargem Grande');
+      await Share.shareXFiles([XFile(backupFile.path)], text: 'Backup CafeGestor 60L - R\$35/medida - Vargem Grande');
     }
-  }
-
-  Future<int> inserirFazenda(Map<String, dynamic> f) async {
-    final database = await db;
-    return await database.insert('fazendas', f);
-  }
-
-  Future<List<Map<String, dynamic>>> listarFazendas() async {
-    final database = await db;
-    return await database.query('fazendas');
-  }
-
-  Future<int> inserirTalhao(Map<String, dynamic> t) async {
-    final database = await db;
-    return await database.insert('talhoes', t);
-  }
-
-  Future<List<Map<String, dynamic>>> listarTalhoesPorFazenda(int fazendaId) async {
-    final database = await db;
-    return await database.query('talhoes', where: 'fazendaId =?', whereArgs: [fazendaId]);
-  }
-
-  Future<Map<String, dynamic>?> getTalhaoById(int id) async {
-    final database = await db;
-    var res = await database.query('talhoes', where: 'id =?', whereArgs: [id]);
-    return res.isNotEmpty? res.first : null;
   }
 }
